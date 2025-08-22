@@ -1,0 +1,42 @@
+
+networks:
+  default:
+    external: true
+    name: shared-net
+
+services:
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: strongpassword
+    volumes:
+      - ./data/minio:/data
+
+  kokoro-tts:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.2.2
+    container_name: kokoro-tts
+    ports:
+      - "8880:8880"
+    # For GPU version replace image with:
+    # ghcr.io/remsky/kokoro-fastapi-gpu:v0.2.2
+    # and add: runtime: nvidia
+
+  nca-toolkit:
+    image: stephengpope/no-code-architects-toolkit:latest
+    container_name: nca-toolkit
+    ports:
+      - "8080:8080"
+    environment:
+      API_KEY: myapikey
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY: mXLxPxgldLiHyGb1QMdm
+      S3_SECRET_KEY: o6FoRIAc6VPPxUyAdziZuxEmRD4XsZ7ty8uFqAX1
+      S3_BUCKET_NAME: nca-toolkit
+      S3_REGION: None
+

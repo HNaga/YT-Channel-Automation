@@ -1,0 +1,2415 @@
+{
+  "name": "YouTube Short Stories Channel v1",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        2160,
+        -32
+      ],
+      "id": "287ec4b8-67e4-4608-a2aa-7aab2f9c40dc",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "544f1fd6-6db2-48e9-b18f-343650c33feb",
+              "name": "audience",
+              "value": "={{ $json['Target Audience'] }}",
+              "type": "string"
+            },
+            {
+              "id": "308fb065-6c41-4a48-a208-3b366bb8759a",
+              "name": "genre",
+              "value": "={{ $json.Genre }}",
+              "type": "string"
+            },
+            {
+              "id": "0421f379-3cf4-4ef0-844e-0b441061c9c7",
+              "name": "story_title",
+              "value": "={{ $json.Title }}",
+              "type": "string"
+            },
+            {
+              "id": "498024b1-cd9d-4198-9aff-4c40589ac602",
+              "name": "clips",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "b2490b1a-1301-4e56-a697-30f8e0c8231b",
+              "name": "Sever_URL",
+              "value": "http://minio:9000",
+              "type": "string"
+            },
+            {
+              "id": "3c6ca33e-8d78-4263-8f5e-e3b67bc925fc",
+              "name": "Bucket_Name",
+              "value": "bed-time-stories",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2768,
+        432
+      ],
+      "id": "f435196f-b937-412d-a604-16090886b68a",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get scenes from previous node\nconst scenes = $input.first().json.output.scenes;\n\n// Voice tag → Kokoro voice mapping\nconst voiceMap = {\n  narrator_f: { voice: \"af_heart\", speed: 1.0 },\n  narrator_m: { voice: \"am_michael\", speed: 1.0 },\n  female:     { voice: \"af_bella\", speed: 1.0 },\n  male:       { voice: \"am_eric\", speed: 1.0 },\n  deep_male:  { voice: \"am_fenrir\", speed: 0.9 },\n  bright_female: { voice: \"af_kore\", speed: 1.05 },\n  child:      { voice: \"af_sky\", speed: 1.2 } // later pitch-shifting via ffmpeg\n};\n\nlet items = [];\n\nfor (const scene of scenes) {\n  // Build final image prompt with art style\n  const art_style = scene.art_style;\n  const finalPrompt = art_style\n    ? `${scene.image_prompt}. Style: ${art_style}`\n    : scene.image_prompt;\n\n    // حساب حجم البرومبت\n  const promptLength = finalPrompt.length; // عدد الحروف\n  console.log(`Scene ${scene.scene_number} prompt length: ${promptLength}`);\n\n\n  \n  if (scene.dialogue) {\n    for (const [i, lineObj] of scene.dialogue.entries()) {\n      const mapping = voiceMap[lineObj.voice_tag] || voiceMap.narrator_f;\n\n      // Escape quotes for JSON safety\n      const safeTTS = lineObj.line\n        ? lineObj.line.replace(/\"/g, '\\\\\"')\n        : \"\";\n\n      items.push({\n        json: {\n          scene_number: scene.scene_number,\n          line_number: i + 1,\n          speaker: lineObj.speaker,\n          voice: mapping.voice,\n          speed: lineObj.speed_hint || mapping.speed,\n          pitch_hint: lineObj.pitch_hint || \"normal\",\n          emotion: lineObj.emotion || \"neutral\",\n          tts_input: safeTTS,\n          file_name: `${scene.scene_number}_${i + 1}_${lineObj.speaker}.mp3`,\n          captions_text: lineObj.line\n            .replace(/\\?/g, \".\")\n            .replace(/[\"']/g, \"\")\n            .replace(/\\r?\\n|\\r/g, \"\\\\n\")\n            .match(/.{1,120}(\\s|$)/g)\n            .join(\"\\\\n\"),\n          image_prompt: scene.image_prompt,\n          art_style: art_style,\n          final_image_prompt: finalPrompt,\n          promptLength : promptLength,\n          duration_hint: scene.duration_hint || 5\n        }\n      });\n    }\n  }\n}\n\nreturn items;\n"
+      },
+      "id": "1f1764d1-17e0-482d-882a-d2e3b2ac71b0",
+      "name": "Split Scenes",
+      "position": [
+        3552,
+        624
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.together.ai/v1/images/generations",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "black-forest-labs/FLUX.1-schnell"
+            },
+            {
+              "name": "prompt",
+              "value": "={{ $('Split Scenes').item.json.final_image_prompt }}"
+            },
+            {
+              "name": "width",
+              "value": "={{ 432 }}"
+            },
+            {
+              "name": "height",
+              "value": "={{ 768 }}"
+            },
+            {
+              "name": "steps",
+              "value": "={{ 10 }}"
+            },
+            {
+              "name": "seed",
+              "value": "={{ 12345 }}"
+            },
+            {
+              "name": "guidance_scale",
+              "value": "={{ 5 }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e4110a8f-fbe3-4320-b72f-14519b6730b7",
+      "name": "Generate Image",
+      "position": [
+        2960,
+        848
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "Ef6xOR3Dysmdp5aR",
+          "name": "Together IE Account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://kokoro-tts:8880/v1/audio/speech",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"kokoro\",\n  \"input\": \"{{ $('Split Scenes').item.json.tts_input }}\",\n  \"voice\": \"{{ $('Split Scenes').item.json.voice }}\" ,\n  \"response_format\": \"mp3\",\n  \"speed\": {{ $('Split Scenes').item.json.speed }}\n}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "85bb20f3-04e8-4e33-917d-61850b1b67a1",
+      "name": "Generate Voiceover",
+      "position": [
+        2304,
+        848
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the current scene item\nconst scene = $input.first().json;\n\n// Ensure clips array exists\nif (!scene.clips) {\n    scene.clips = [];\n}\n\n// Get the new clip URL from previous node (e.g., AI Agent)\nconst clipUrl = $input.first().json.response || \"\";\n\n// Add clip to the scene's clips array\nscene.clips.push(clipUrl);\n\n// Return updated scene\nreturn [\n  {\n    json: scene\n  }\n];\n"
+      },
+      "id": "c62d7dc5-9d9b-4f00-949e-57b2889ec740",
+      "name": "Video url to array",
+      "position": [
+        3920,
+        1040
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3152,
+        1008
+      ],
+      "id": "d90df495-1107-448a-badf-45228d349207",
+      "name": "Wait",
+      "webhookId": "b2665a0b-8f42-435b-b58c-a164c3eea6c3"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://nca-toolkit:8080/v1/ffmpeg/compose",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"id\": \"get-audio-duration\",\n  \"inputs\": [\n    {\n      \"file_url\": \"{{ $('set voiceover Files').item.json.file_path }}\"\n    }\n  ],\n  \"outputs\": [\n    {\n      \"options\": [\n        {\n          \"option\": \"-f\",\n          \"argument\": \"mp3\"\n        }\n      ]\n    }\n  ],\n  \"metadata\": {\n    \"duration\": true\n  }\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2720,
+        848
+      ],
+      "id": "1172be08-57bd-4232-adb3-c15001d1f92a",
+      "name": "Get Audio Duration",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "F4zKzd9hTCntAOxr",
+          "name": "nca-toolkit account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1712,
+        992
+      ],
+      "id": "59e27a01-7677-4146-ace9-fc48f1c057b2",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "={{ $('set voiceover Files').item.json.bucket_name }}",
+        "fileName": "={{ $('set voiceover Files').item.json.file_name }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        2512,
+        848
+      ],
+      "id": "e0644783-2dd5-4a22-95fe-b14214089cfd",
+      "name": "Upload Voiceover",
+      "credentials": {
+        "s3": {
+          "id": "mTauNTtFKcMQuuHT",
+          "name": "S3 account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://nca-toolkit:8080/v1/image/convert/video",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"image_url\": \"{{ $('Generate Image').item.json.data[0].url }}\",\n    \"length\": {{ $('Get Audio Duration').item.json.response[0].duration }},\n    \"frame_rate\": 24,\n    \"zoom_speed\": 5\n    \n} ",
+        "options": {}
+      },
+      "id": "541502fc-35e2-499b-9138-baef7b74345d",
+      "name": "Create Video Scene",
+      "position": [
+        3376,
+        832
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "F4zKzd9hTCntAOxr",
+          "name": "nca-toolkit account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://nca-toolkit:8080/v1/ffmpeg/compose",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"id\": \"audio-layering\",\n    \"inputs\": [\n        {\n            \"file_url\": \"{{ $('Create Video Scene').item.json.response }}\"\n        },\n        {\n            \"file_url\": \"{{ $('Get Audio Duration').item.json.response[0].file_url }}\"\n        }\n    ],\n    \"filters\": [\n        {\n            \"filter\": \"[1:a]volume=1[outa]\"\n        }\n    ],\n    \"outputs\": [\n        {\n            \"options\": [\n                {\n                    \"option\": \"-map\",\n                    \"argument\": \"0:v\"\n                },\n                {\n                    \"option\": \"-map\",\n                    \"argument\": \"[outa]\"\n                },\n                {\n                    \"option\": \"-c:v\",\n                    \"argument\": \"copy\"\n                },\n                {\n                    \"option\": \"-c:a\",\n                    \"argument\": \"aac\"\n                }\n            ]\n        }\n    ]\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3568,
+        832
+      ],
+      "id": "5f2c03c0-c6b9-4423-ab44-e9ad89eec77c",
+      "name": "Add TTS To Scene",
+      "notesInFlow": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "F4zKzd9hTCntAOxr",
+          "name": "nca-toolkit account"
+        }
+      },
+      "notes": "Add Voiceover"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://nca-toolkit:8080/v1/video/caption",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"video_url\": \"{{ $json.response[0].file_url }}\",\n    \n   \"settings\": {\n    \"style\": \"highlight\",\n    \"line_color\": \"#FFFFFF\",\n    \"outline_color\": \"#000000\",\n    \"position\": \"bottom_center\",\n    \"alignment\": \"center\",\n    \"font_family\": \"DejaVu Sans\",\n    \"font_size\": 48,\n    \"bold\": true\n  },\n  \"id\": \"scene-caption-001\",\n  \"language\": \"en\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3744,
+        832
+      ],
+      "id": "f77cd56d-7ae5-4f8d-8bb0-c1f84138a61d",
+      "name": "Add Captions To Scene",
+      "notesInFlow": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "F4zKzd9hTCntAOxr",
+          "name": "nca-toolkit account"
+        }
+      },
+      "notes": "Add Captions"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://nca-toolkit:8080/v1/video/concatenate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"video_urls\": {{ JSON.stringify($json.video_urls) }},\n  \"id\": \"final-video\"\n}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "id": "3a7a3201-3af9-4d5a-9f77-b9e28aa5820d",
+      "name": "Create Final Video",
+      "position": [
+        2144,
+        1264
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "notesInFlow": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "F4zKzd9hTCntAOxr",
+          "name": "nca-toolkit account"
+        }
+      },
+      "notes": "Concatenate All Scenes"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        1712,
+        448
+      ],
+      "id": "afc6ed4f-b233-451c-bd08-d96d2b978cee",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash-preview-05-20",
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        160
+      ],
+      "id": "8d0862a0-1e1e-4e79-99a2-8b1888488474",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "8W75O6T7cCQEdmkm",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and set voiceover file name\nfor (const item of $input.all()) {\n  const storyTitle = item.json.story_title || \"story\";\n  const sceneNumber = item.json.scene_number || 1;\n\n  // Create file name like: \"MyStory-1.mp3\"\n  item.json.file_name = `${storyTitle}-${sceneNumber}.mp3`;\n  item.json.bucket_name = \"bed-time-stories\"\n  item.json.file_path = `http://minio:9000/${item.json.bucket_name}/${item.json.file_name}`;\n}\n\nreturn $input.all();\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2112,
+        848
+      ],
+      "id": "b8a1f156-65d7-4ce7-9232-d2954f293866",
+      "name": "set voiceover Files"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get all input items\nconst items = $input.all();\n\n// Flatten all clips into array of objects with 'video_url'\nconst allClips = items.flatMap(item => (item.json.clips || []).map(url => ({ video_url: url })));\n\n// Return payload\nreturn {\n  json: {\n    video_urls: allClips,\n    webhook_url: \"https://careful-humble-roughy.ngrok-free.app/webhook/8bba005b-b359-41a6-88dc-269335982b48/webhook\",  // replace with your webhook\n    id: \"request-123\"                            // your job ID\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        1264
+      ],
+      "id": "2b01c83d-9e1e-437c-88d3-b340577be726",
+      "name": "Set Video Clips"
+    },
+    {
+      "parameters": {
+        "content": "## Note\n### Audience (e.g., children, teenagers, adults, general audience)\n\n### Genre (e.g., fantasy, sci-fi, romance, horror, adventure)\n### Story Title (specific title requested by the user) \n\n### 720×1280 for vertical, 1280×720 for horizontal",
+        "height": 288,
+        "width": 576
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3888,
+        448
+      ],
+      "typeVersion": 1,
+      "id": "28050891-0776-439f-99c3-2bd1c5c1c952",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"description\": \"A list of diverse story ideas with titles, target audiences, genres, characters, descriptions, and status.\",\n  \"properties\": {\n    \"stories\": {\n      \"type\": \"array\",\n      \"description\": \"An array containing details for each story idea.\",\n      \"items\": {\n        \"type\": \"object\",\n        \"description\": \"Details for a single story idea.\",\n        \"properties\": {\n          \"title\": {\n            \"type\": \"string\",\n            \"description\": \"The main title of the story.\"\n          },\n          \"targetAudience\": {\n            \"type\": \"string\",\n            \"description\": \"The primary demographic or age group for which the story is intended (e.g., 'Children (Ages 4-8)', 'Teenagers, Young Adults', 'General Audience').\"\n          },\n          \"genre\": {\n            \"type\": \"string\",\n            \"description\": \"The genre or genres of the story, comma-separated if multiple (e.g., 'Fantasy, Adventure', 'Sci-Fi, Mystery', 'Comedy, Urban Fantasy').\"\n          },\n          \"characters\": {\n            \"type\": \"array\",\n            \"description\": \"A list of main characters in the story.\",\n            \"items\": {\n              \"type\": \"string\",\n              \"description\": \"The name of a main character.\"\n            }\n          },\n          \"description\": {\n            \"type\": \"string\",\n            \"description\": \"A short summary or overview of the story idea.\"\n          },\n          \"status\": {\n            \"type\": \"string\",\n            \"description\": \"The current stage of the story idea (e.g., 'Draft', 'In Progress', 'Completed', 'Idea').\"\n          }\n        },\n        \"required\": [\n          \"title\",\n          \"targetAudience\",\n          \"genre\",\n          \"characters\",\n          \"description\",\n          \"status\"\n        ]\n      }\n    }\n  },\n  \"required\": [\n    \"stories\"\n  ]\n}\n"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        2688,
+        144
+      ],
+      "id": "bc8ec99a-fa14-4007-945b-88281ab78f79",
+      "name": "Structured Output Parser1"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "output.stories",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        2704,
+        -32
+      ],
+      "id": "88c92767-7d01-46e1-8b79-50c75e8b0783",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4",
+          "mode": "list",
+          "cachedResultName": "Story-Hub-Stories",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 575774285,
+          "mode": "list",
+          "cachedResultName": "Shorts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4/edit#gid=575774285"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "== ROW() - 1",
+            "Title": "={{ $json.title }}",
+            "Genre": "={{ $json.genre }}",
+            "Characters": "={{ $json.characters }}",
+            "Brief": "={{ $json.description }}",
+            "Status": "={{ $json.status }}",
+            "SEO": "No",
+            "Target Audience": "={{ $json.targetAudience }}"
+          },
+          "matchingColumns": [
+            "ID"
+          ],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Target Audience",
+              "displayName": "Target Audience",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Genre",
+              "displayName": "Genre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Characters",
+              "displayName": "Characters",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Brief",
+              "displayName": "Brief",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Video URL",
+              "displayName": "Video URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "YouTube ID",
+              "displayName": "YouTube ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "SEO",
+              "displayName": "SEO",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Visibility",
+              "displayName": "Visibility",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2912,
+        -32
+      ],
+      "id": "9a310813-0469-459a-b195-6f98fb90968a",
+      "name": "Append or update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "AtAAcJfVExJK1xgT",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4",
+          "mode": "list",
+          "cachedResultName": "Story-Hub-Stories",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 575774285,
+          "mode": "list",
+          "cachedResultName": "Shorts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4/edit#gid=575774285"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Status",
+              "lookupValue": "Draft"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2320,
+        432
+      ],
+      "id": "207fc0f4-614b-47a9-bc50-1ac32f1f11e1",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "AtAAcJfVExJK1xgT",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        2528,
+        432
+      ],
+      "id": "cef20e69-b304-45b7-8cca-050161294cb7",
+      "name": "Limit"
+    },
+    {
+      "parameters": {
+        "content": "## Create Stories Data\n",
+        "height": 416,
+        "width": 1120
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2080,
+        -112
+      ],
+      "typeVersion": 1,
+      "id": "fef3070e-0f79-4968-b81e-880486fd0853",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Generate a dataset of N Viral Short Video ideas About:\nWow Facts About something (place/monument/etc)\n\nConstraints:\n- N = {{ $json.count || 10 }}\n- \"stories\" must have exactly N items.\n- Titles must be unique and not numbered (no \"Story 1\", etc.).\n- Characters: Femake Narrator.\n- Description: Guide to AI Agent to create the video script. scence and Dialog\n- Status must be one of: Draft\n- Keep output size efficient; avoid overly long text.\n\n\n",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are specialized in creating diverse and creative ideas for Viral Short Videos.  \nEach story must include a unique title, a clear target audience, one or more genres, main character, \nshort description (Guide AI Agent to Generate the script), \nShort description is in the format of Hook\nand a status (Idea, Draft, In Progress, Completed).\n\nDon't duplicate titles in the google sheet (Use Titles Sheet Tool)\n\nAlways output structured JSON that matches the provided schema exactly.  \nDo not include explanations, only valid JSON.  \n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        2368,
+        -32
+      ],
+      "id": "7aeb85f7-85a6-492e-bd9e-a658394381c6",
+      "name": "Title Generator"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4",
+          "mode": "list",
+          "cachedResultName": "Story-Hub-Stories",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 575774285,
+          "mode": "list",
+          "cachedResultName": "Shorts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4/edit#gid=575774285"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ $('Limit').first().json.ID }}",
+            "Status": "Uploaded",
+            "Video URL": "={{ $json.Destination_Path }}",
+            "YouTube ID": "={{ $json.uploadId }}",
+            "SEO": "No"
+          },
+          "matchingColumns": [
+            "ID"
+          ],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Target Audience",
+              "displayName": "Target Audience",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Genre",
+              "displayName": "Genre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Characters",
+              "displayName": "Characters",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Brief",
+              "displayName": "Brief",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Video URL",
+              "displayName": "Video URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "YouTube ID",
+              "displayName": "YouTube ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "SEO",
+              "displayName": "SEO",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Visibility",
+              "displayName": "Visibility",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3168,
+        1440
+      ],
+      "id": "2b526b3d-d2c1-44c8-8acd-2d90ea362455",
+      "name": "Update Status",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "AtAAcJfVExJK1xgT",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the first item from 'Edit Fields'\n//const input = \"http://minio:9000/nca-toolkit/8a4558b3-7421-43c2-8f1a-7cf57060c0c8.mp4\";\nconst input = $('Create Final Video').first().json.response;\nconst source_file = input.replace('http://minio:9000', '');\n// Sanitize bucket name: lowercase, replace spaces with hyphens, remove invalid chars\nconst target_bucket = $('Edit Fields').first().json.Bucket_Name\n  .toLowerCase()\n  .replace(/[^a-z0-9.-]/g, '-')  // only allow a-z, 0-9, dot, hyphen\n  .replace(/^-+|-+$/g, '');      // remove leading/trailing hyphens\n\n// Sanitize story title for filename: replace spaces and invalid chars\nconst filename = $('Edit Fields').first().json.story_title\n  .replace(/[^a-zA-Z0-9_-]/g, '-') // letters, numbers, _, -\n  .toLowerCase()                   // convert to lowercase\n  + '-final.mp4';\n\n// Return an array of objects (required by n8n)\nreturn [\n  {\n    json: {\n      Source_Path: `${source_file}`,\n      video_name: `${filename}`,\n      target_bucket: `/${target_bucket}`,\n      Destination_Path: `/${target_bucket}/${filename}`\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2816,
+        1440
+      ],
+      "id": "8bb83d1a-2396-4e53-b113-4510af3a7041",
+      "name": "Set Files Names and Path"
+    },
+    {
+      "parameters": {
+        "url": "http://nca-toolkit:8080/v1/toolkit/test",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        448
+      ],
+      "id": "25fb5cb8-9e8d-4082-a6e5-7b467b66e9c7",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "F4zKzd9hTCntAOxr",
+          "name": "nca-toolkit account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "content": "## Test Connection\n",
+        "height": 272
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1952,
+        384
+      ],
+      "typeVersion": 1,
+      "id": "e7bc2752-c75e-4022-b774-2c65fbabe0ba",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Generate Image').item.json.data[0].url }}",
+        "options": {}
+      },
+      "id": "32ef1c63-7286-4287-b4be-4ec9c2b9e6ab",
+      "name": "Get the image from URL",
+      "position": [
+        3168,
+        832
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "errorMessage": "Can not correct to Server"
+      },
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        2208,
+        608
+      ],
+      "id": "97e52f9d-04ee-4150-831b-82317bea44ec",
+      "name": "Stop and Error"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolSerpApi",
+      "typeVersion": 1,
+      "position": [
+        2464,
+        160
+      ],
+      "id": "888cf994-b871-4a83-b310-8e606163869f",
+      "name": "SerpAPI",
+      "credentials": {
+        "serpApi": {
+          "id": "zsrQt3xpcuVcJ3XX",
+          "name": "SerpAPI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "=bed-time-stories",
+        "fileName": "={{ $('Edit Fields').first().json.story_title\n  .replace(/[^a-zA-Z0-9_-]/g, '-') // letters, numbers, _, -\n  .toLowerCase()                   // convert to lowercase\n  + '-final.mp4' }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        2592,
+        1440
+      ],
+      "id": "e3ef830a-5eff-4643-b1f9-3b321cd10c52",
+      "name": "Copy to MinIO",
+      "credentials": {
+        "s3": {
+          "id": "mTauNTtFKcMQuuHT",
+          "name": "S3 account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={\n  \"story_title\": \"{{ $json.story_title }}\",\n  \"audience\": \"{{ $json.audience }}\",\n  \"genre\": \"{{ $json.genre }}\",\n  \"premise\": \"{{ $('Get row(s) in sheet').item.json.Brief }}\",\n  \"main_characters\": {{ $('Get row(s) in sheet').item.json.Characters }}\n}\n",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are a professional story writer, Art Styler, dialogue director, and Short video content strategist. \nYour task is to generate a complete, engaging video script based on the input data. \n\nInput includes:\n- title: The Vidoe title\n- genre: The Vidoe genre (e.g., Adventure, Fantasy, Historical, Sci-Fi, Educational)\n- target_audience: Intended audience (e.g., Kids 5–8, Teens 13–18, Adults)\n- main_characters\n- description: A short brief or logline (Guide you for generating the script)\n\nRequirements:\n\n1. Global Story Configuration:\n- Generate dynamic characters based on genre and target audience. \nEach character must include:\n  - character_name\n  - description (appearance, outfit, personality, role in story)\n- Determine a concise story logline.\n- All character and art style choices should be consistent across all scenes.\n\n2. Scenes:\n- Include scene 0 as a decorative intro/title card with an optional narrator line like \"Today's story is {story_title}\".\n- Determine the natural number of scenes to create a complete narrative arc.\n- Each scene must include:\n  - scene_number\n  - image_prompt (detailed for AI image generation, including setting, characters, actions, expressions, mood, lighting, camera shot, props, symbols, and art style hints)\n\n  - art_style (dynamically chosen to match genre, audience, and scene tone)\n\n\"Ensure historical and cultural accuracy for people, clothing, and settings, avoid anachronisms.\"\n\"ُEnsure image_prompt length + art_style lenght not exceeding 256 character\"\n\n  - dialogue (array of lines with speaker, line, voice_tag, emotion, speed_hint, pitch_hint)\n  - duration_hint (approximate scene length in seconds)\n\n- Include Outro scene  as a decorative outro/CTA follow the art style of intro scene\n\n3. Dialogue & Pacing:\n- Scene 1 must hook the viewer within 3–5 seconds using action, conflict, or mystery.\n- Dialogue must be short, TTS-friendly (1–2 sentences per line).\n\n\"Ensure the dialog can be used by TTS, for example avoide Roman numerals\"\n\n- Use Narrator lines as needed to clarify context visually or narratively.\n\n4. TTS Parameters:\n- voice_tag: one of [\"narrator_f\", \"narrator_m\", \"female\", \"male\", \"deep_male\", \"bright_female\", \"child\"]\n- emotion: one of [\"neutral\", \"happy\", \"excited\", \"scared\", \"sad\", \"angry\", \"whisper\"]\n- speed_hint: float where 1.0 is normal (e.g., child ≈ 1.15–1.25)\n- pitch_hint: one of [\"low\", \"normal\", \"high\"]\n\n5. Output:\n-Review the output and ensure it's valid for image generation and TTS and perfect for Viral YouTube/TikTok Video\n- Return a single valid JSON object strictly following the provided JSON schema.\n- Do not include any explanatory text outside the JSON.\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        3184,
+        432
+      ],
+      "id": "78aba543-28a2-471d-8e5e-b3d0fae6d63d",
+      "name": "Story Generator",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "[\n  {\n    \"$schema\": \"http://json-schema.org/draft-07/schema#\",\n    \"title\": \"Story Content Schema for n8n AI Agent Node\",\n    \"description\": \"Schema for defining a story with scenes, characters, and dialogue, suitable for generation and processing by an n8n AI Agent.\",\n    \"type\": \"object\",\n    \"required\": [\n      \"story_title\",\n      \"logline\",\n      \"target_audience\",\n      \"genre\",\n      \"characters\",\n      \"scenes\"\n    ],\n    \"properties\": {\n      \"story_title\": {\n        \"type\": \"string\",\n        \"description\": \"The main title of the story.\"\n      },\n      \"logline\": {\n        \"type\": \"string\",\n        \"description\": \"A brief, enticing summary of the story's core plot.\"\n      },\n      \"target_audience\": {\n        \"type\": \"string\",\n        \"description\": \"The intended demographic for the story (e.g., 'Teenagers', 'Young Adults').\"\n      },\n      \"genre\": {\n        \"type\": \"string\",\n        \"description\": \"The genre(s) of the story (e.g., 'Greek Mythology, Adventure, Mystery').\"\n      },\n      \"characters\": {\n        \"type\": \"array\",\n        \"description\": \"A list of characters featured in the story.\",\n        \"items\": {\n          \"type\": \"object\",\n          \"required\": [\n            \"character_name\",\n            \"description\"\n          ],\n          \"properties\": {\n            \"character_name\": {\n              \"type\": \"string\",\n              \"description\": \"The name of the character.\"\n            },\n            \"description\": {\n              \"type\": \"string\",\n              \"description\": \"A detailed description of the character's appearance, personality, or role.\"\n            }\n          }\n        }\n      },\n      \"scenes\": {\n        \"type\": \"array\",\n        \"description\": \"A sequential list of scenes that make up the story.\",\n        \"items\": {\n          \"type\": \"object\",\n          \"required\": [\n            \"scene_number\",\n            \"image_prompt\",\n            \"art_style\",\n            \"dialogue\",\n            \"duration_hint\"\n          ],\n          \"properties\": {\n            \"scene_number\": {\n              \"type\": \"integer\",\n              \"description\": \"The sequential number of the scene, starting from 0.\"\n            },\n            \"image_prompt\": {\n              \"type\": \"string\",\n              \"description\": \"A descriptive prompt for generating an image for this scene.\"\n            },\n            \"art_style\": {\n              \"type\": \"string\",\n              \"description\": \"The desired art style for the image (e.g., 'Classical Greek Painting', 'Dramatic Renaissance', 'Realism').\"\n            },\n            \"dialogue\": {\n              \"type\": \"array\",\n              \"description\": \"A list of dialogue lines and narration for this scene.\",\n              \"items\": {\n                \"type\": \"object\",\n                \"required\": [\n                  \"speaker\",\n                  \"line\",\n                  \"voice_tag\",\n                  \"emotion\",\n                  \"speed_hint\",\n                  \"pitch_hint\"\n                ],\n                \"properties\": {\n                  \"speaker\": {\n                    \"type\": \"string\",\n                    \"description\": \"The character or entity speaking (e.g., 'Narrator', 'Lysandra', 'Whispering Echoes').\"\n                  },\n                  \"line\": {\n                    \"type\": \"string\",\n                    \"description\": \"The actual spoken or narrated text.\"\n                  },\n                  \"voice_tag\": {\n                    \"type\": \"string\",\n                    \"description\": \"A tag indicating the desired voice for the line (e.g., 'narrator_f', 'female', 'deep_male'). This could potentially be an enum based on available voice models.\"\n                  },\n                  \"emotion\": {\n                    \"type\": \"string\",\n                    \"description\": \"The emotional tone of the dialogue (e.g., 'neutral', 'determined', 'excited', 'angry', 'whisper', 'happy').\"\n                  },\n                  \"speed_hint\": {\n                    \"type\": \"number\",\n                    \"format\": \"float\",\n                    \"description\": \"A multiplier for the speaking speed (e.g., 1.0 for normal, 0.9 for slightly slower, 1.1 for slightly faster).\"\n                  },\n                  \"pitch_hint\": {\n                    \"type\": \"string\",\n                    \"description\": \"A hint for the vocal pitch (e.g., 'normal', 'low', 'high').\"\n                  }\n                }\n              }\n            },\n            \"duration_hint\": {\n              \"type\": \"integer\",\n              \"description\": \"A hint for the desired duration of the scene in seconds.\"\n            }\n          }\n        }\n      }\n    }\n  }\n]"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        3344,
+        640
+      ],
+      "id": "2c6977ca-daed-4e80-a464-3989cad7a3d5",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "videoSources": {
+          "sources": [
+            {
+              "value": "={{ $json.response }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-mediafx.mediaFX",
+      "typeVersion": 1,
+      "position": [
+        2368,
+        1264
+      ],
+      "id": "1f29357e-f3b5-4915-adba-7f9fc2541cac",
+      "name": "Merge video"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $('Story Generator').first().json.output.story_title }}",
+        "regionCode": "US",
+        "categoryId": "=24",
+        "options": {
+          "defaultLanguage": "en",
+          "description": "={{ $('Story Generator').first().json.output.story_title ",
+          "privacyStatus": "private",
+          "selfDeclaredMadeForKids": false
+        }
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        2592,
+        1264
+      ],
+      "id": "e9e38b87-efc2-4ef0-9eb2-7b1803c40e5b",
+      "name": "Upload a video",
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "psCtNO8YpUGxI9nx",
+          "name": "YouTube  Stories account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2992,
+        1280
+      ],
+      "id": "cef47a94-73e8-4caa-bc9d-3f9663c9595e",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash-preview-05-20",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        3088,
+        624
+      ],
+      "id": "0e7036ad-7e30-45a4-b714-8fc7d9e14694",
+      "name": "Google Gemini",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "8W75O6T7cCQEdmkm",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        1728,
+        272
+      ],
+      "id": "d8f6955c-c8ba-42bb-8b0e-a99f5b5e5761",
+      "name": "Telegram Trigger",
+      "webhookId": "b5a5c516-896f-4a61-a7fe-c7a486de0c28",
+      "credentials": {
+        "telegramApi": {
+          "id": "VRmD7e39iwff4Qra",
+          "name": "Telegram Social Media account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "6045625190",
+        "text": "=Next Short Video:\n{{ $json.story_title }}\n",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2976,
+        320
+      ],
+      "id": "6db121d0-a484-4123-8394-ff1d508fdb5a",
+      "name": "Send Status message",
+      "webhookId": "82a4be26-3316-4a3b-881c-b76ca437da47",
+      "credentials": {
+        "telegramApi": {
+          "id": "VRmD7e39iwff4Qra",
+          "name": "Telegram Social Media account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "6045625190",
+        "text": "AI Agent Error",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3584,
+        448
+      ],
+      "id": "4ab3d5ee-4eba-48c7-b4aa-67b78d9e7a88",
+      "name": "Send a Error message",
+      "webhookId": "62a4ff07-59af-4785-bc38-6d58165ed082",
+      "credentials": {
+        "telegramApi": {
+          "id": "VRmD7e39iwff4Qra",
+          "name": "Telegram Social Media account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "6045625190",
+        "text": "=Story Published\n{{ $json.snippet.title }}\nVideo Published <a href=\"https://youtu.be/{{ $json.id }}\">Watch here</a>\n\n<code>{{ $now }}</code>\n",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3808,
+        1680
+      ],
+      "id": "12510338-0013-40a0-83de-9cc05733ba1d",
+      "name": "Send Success message",
+      "webhookId": "6ee4a169-d194-4f60-99ca-94ee2ade9b47",
+      "credentials": {
+        "telegramApi": {
+          "id": "VRmD7e39iwff4Qra",
+          "name": "Telegram Social Media account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3abc7996-4b85-495f-91c9-c7bffccb2946",
+              "leftValue": "={{ $json['YouTube ID'] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2096,
+        1696
+      ],
+      "id": "2bb01360-9572-4d83-8212-7a66833fa9dc",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "get",
+        "videoId": "={{ $('Limit1').item.json[\"YouTube ID\"] }}",
+        "part": [
+          "snippet"
+        ],
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        3584,
+        1680
+      ],
+      "id": "472de2cf-3562-4142-ba0d-800f952c4424",
+      "name": "Get a video",
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "QMW7MkiRf7W0zZDJ",
+          "name": "YouTube account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Title: {{ $json.Title }}\nGenre: {{ $json.Genre }}\nTarget Audience: {{ $json['Ttarget Audience'] }}\n- description / logline: {{ $json.Brief }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are a professional video content strategist and YouTube upload expert. \nYour task is to generate all necessary metadata for uploading a story-based video to YouTube using the n8n YouTube node.\n\nInput:\n- story JSON output from the Story Generator node, including:\n  - story_title\n  - genre\n  - target_audience\n  - description / logline\n- Optional platform hint (e.g., YouTube Shorts, standard YouTube)\n\nRequirements:\n\n1. YouTube Metadata:\n- Determine the most suitable YouTube **category ID** based on story genre and content. Use standard YouTube category IDs (e.g., \n1 for Film & Animation, \n2 for Autos & Vehicles, \n22 for People & Blogs, \n27 for Education, \n24 for Entertainment, etc.)\n- Recommend privacy setting: \"public\", \"unlisted\", or \"private\"\n- Suggest a Viral, catchy video title, optionally slightly different from story_title to maximize engagement\n- Generate a short, engaging video description using the story logline and context\n- Generate a list of relevant tags (5–15 tags), reflecting story content, genre, and target audience\n\n2. Output:\n- Return a single valid JSON object strictly structured as:\n\n{\n  \"youtube_category_id\": 27,\n  \"youtube_privacy\": \"public\",\n  \"video_title\": \"Suggested catchy title\",\n  \"video_description\": \"Short engaging description\",\n  \"tags\": [\"tag1\",\"tag2\",\"tag3\"]\n}\n\n- Do not include any explanatory text outside the JSON.\n- Ensure metadata is fully compatible with the n8n YouTube Upload node fields.\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        2576,
+        1680
+      ],
+      "id": "b1b78e20-f06e-4253-aac3-ab209644272e",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash-preview-05-20",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2544,
+        1872
+      ],
+      "id": "599f72e3-ef81-4485-a20a-cf874a9e2726",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "8W75O6T7cCQEdmkm",
+          "name": "Google Gemini(PaLM) Api account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "update",
+        "videoId": "={{ $('If').item.json['YouTube ID'] }}",
+        "title": "={{ $json.title }}",
+        "regionCode": "US",
+        "categoryId": "={{ $json.category_id }}",
+        "updateFields": {
+          "description": "={{ $json.description }}",
+          "privacyStatus": "public",
+          "tags": "={{$json[\"tags\"]}}"
+        }
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        3136,
+        1680
+      ],
+      "id": "76446c5f-d388-4466-af22-0502c4911dc7",
+      "name": "Update a video",
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "QMW7MkiRf7W0zZDJ",
+          "name": "YouTube account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4",
+          "mode": "list",
+          "cachedResultName": "Story-Hub-Stories",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 575774285,
+          "mode": "list",
+          "cachedResultName": "Shorts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4/edit#gid=575774285"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ID": "={{ $('Limit1').item.json.ID }}",
+            "SEO": "Yes",
+            "Status": "Published"
+          },
+          "matchingColumns": [
+            "ID"
+          ],
+          "schema": [
+            {
+              "id": "ID",
+              "displayName": "ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Target Audience",
+              "displayName": "Target Audience",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Genre",
+              "displayName": "Genre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Characters",
+              "displayName": "Characters",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Brief",
+              "displayName": "Brief",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Video URL",
+              "displayName": "Video URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "YouTube ID",
+              "displayName": "YouTube ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "SEO",
+              "displayName": "SEO",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Visibility",
+              "displayName": "Visibility",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3344,
+        1680
+      ],
+      "id": "d2f668a6-a6da-46d6-a0b4-013d15ee29d9",
+      "name": "Update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "AtAAcJfVExJK1xgT",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Assuming input data contains preview, timestamps, tags\nconst input = $input.first().json.output;\n\nconst video_title = input.video_title;\nconst video_description = input.video_description;\nconst category_id = input.youtube_category_id;\nconst timestamps = input.timestamps || \"\";\nconst tags = input.tags.join(\", \");\n\n\n// Format description string\nconst description = `${video_description}`.trim();\n\nreturn [\n  {\n    json: {\n      title: video_title,\n      description: description,\n      category_id: category_id,\n      tags: tags,\n    },\n  },\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2928,
+        1680
+      ],
+      "id": "4362966e-684e-4d08-b42d-b22f17eaae1c",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4",
+          "mode": "list",
+          "cachedResultName": "Story-Hub-Stories",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 575774285,
+          "mode": "list",
+          "cachedResultName": "Shorts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4/edit#gid=575774285"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Status",
+              "lookupValue": "Uploaded"
+            },
+            {
+              "lookupColumn": "SEO",
+              "lookupValue": "No"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1920,
+        1696
+      ],
+      "id": "71c7cfdd-e7f1-4b9c-a8d9-d7a511230e98",
+      "name": "Get row(s) in sheet1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "AtAAcJfVExJK1xgT",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        2368,
+        1680
+      ],
+      "id": "1bc7b359-8d27-49d2-bf20-1aefbbbe2a10",
+      "name": "Limit1"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"youtube_category_id\": {\n      \"type\": \"integer\",\n      \"description\": \"Numeric YouTube category ID compatible with YouTube API (e.g., 27 for Education).\"\n    },\n    \"youtube_privacy\": {\n      \"type\": \"string\",\n      \"enum\": [\"public\", \"unlisted\", \"private\"],\n      \"description\": \"Privacy setting for the video.\"\n    },\n    \"video_title\": {\n      \"type\": \"string\",\n      \"description\": \"Suggested catchy title for the video, optimized for engagement.\"\n    },\n    \"video_description\": {\n      \"type\": \"string\",\n      \"description\": \"Short engaging description for the video, based on story logline.\"\n    },\n    \"tags\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"string\"\n      },\n      \"description\": \"Relevant tags for the video, reflecting story content, genre, and audience.\"\n    }\n  },\n  \"required\": [\"youtube_category_id\", \"youtube_privacy\", \"video_title\", \"video_description\", \"tags\"],\n  \"additionalProperties\": false\n}\n"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        2800,
+        1856
+      ],
+      "id": "c7e5fc6f-ade3-4d55-9226-30ebc4ba5532",
+      "name": "Structured Output Parser2"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolSerpApi",
+      "typeVersion": 1,
+      "position": [
+        2672,
+        1872
+      ],
+      "id": "eceb8150-8b56-413e-9f2c-424e0a438692",
+      "name": "SerpAPI1",
+      "credentials": {
+        "serpApi": {
+          "id": "zsrQt3xpcuVcJ3XX",
+          "name": "SerpAPI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolSerpApi",
+      "typeVersion": 1,
+      "position": [
+        3232,
+        640
+      ],
+      "id": "b088fce0-c4ee-4966-8bb6-a0e23a1365a1",
+      "name": "SerpAPI2",
+      "credentials": {
+        "serpApi": {
+          "id": "zsrQt3xpcuVcJ3XX",
+          "name": "SerpAPI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.output }}",
+        "options": {
+          "systemMessage": "You are n8n and JSON expert\nyour input in JSON\nProvide JSON Schema to be used for n8n AI Agent Node "
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        3600,
+        48
+      ],
+      "id": "f128e0dc-d0a8-485a-8556-427eb8b1b72b",
+      "name": "AI Agent1"
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw = $input.first().json.output;\n\n// 1. Remove markdown fences like ```json ... ```\nraw = raw.replace(/```json/gi, \"\")\n         .replace(/```/g, \"\")\n         .trim();\n\n// 2. Find the first JSON object { ... }\nconst match = raw.match(/\\{[\\s\\S]*\\}/);\n\nif (!match) {\n  throw new Error(\"❌ No JSON object found in output:\\n\" + raw);\n}\n\nlet clean = match[0];\n\n// 3. Parse safely\nlet parsed;\ntry {\n  parsed = JSON.parse(clean);\n} catch (e) {\n  throw new Error(\"❌ Failed to parse JSON:\\n\" + e.message + \"\\nExtracted:\\n\" + clean);\n}\n\n// 4. Return clean JSON for next node\nreturn [{ json: parsed }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3952,
+        48
+      ],
+      "id": "6fbad2fa-ebd8-48b8-b54b-dd269353b471",
+      "name": "Code1"
+    },
+    {
+      "parameters": {
+        "chatId": "6045625190",
+        "text": "=Story Uploaded\n{{ $json.snippet.title }}\nVideo Uploaded <a href=\"https://youtu.be/{{ $json.id }}\">Watch here</a>\n\n<code>{{ $now }}</code>\n",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3568,
+        1440
+      ],
+      "id": "7e2c6060-bc03-43c8-bcd4-73a294369482",
+      "name": "Send Success message1",
+      "webhookId": "4b7884d8-76db-41aa-aebe-3ed15cf328d0",
+      "credentials": {
+        "telegramApi": {
+          "id": "VRmD7e39iwff4Qra",
+          "name": "Telegram Social Media account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "get",
+        "videoId": "={{ $json['YouTube ID'] }}",
+        "part": [
+          "snippet"
+        ],
+        "options": {}
+      },
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 1,
+      "position": [
+        3392,
+        1440
+      ],
+      "id": "82496412-5ee7-4cd5-9c37-74d82230d708",
+      "name": "Get a video1",
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "QMW7MkiRf7W0zZDJ",
+          "name": "YouTube account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "6045625190",
+        "text": "=In Progress - Scene-{{ $json.scene_number }} Duration: {{ $json.duration_hint }}\n<code>{{ $now.format('dd-MM-yyyy: MM:ss') }}</code>",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1904,
+        848
+      ],
+      "id": "e3deceb1-c1dd-40b5-a287-8c6456d28ff9",
+      "name": "Send a Error message1",
+      "webhookId": "62a4ff07-59af-4785-bc38-6d58165ed082",
+      "credentials": {
+        "telegramApi": {
+          "id": "VRmD7e39iwff4Qra",
+          "name": "Telegram Social Media account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4",
+          "mode": "list",
+          "cachedResultName": "Story-Hub-Stories",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 575774285,
+          "mode": "list",
+          "cachedResultName": "Shorts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/11fGstgoMG_MkMtWvYw3SWb1xpELPIHCdPN7y6X-UNv4/edit#gid=575774285"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        2560,
+        176
+      ],
+      "id": "d1b5fa61-ec61-46d4-9e9e-f55e4cbbf7b9",
+      "name": "Titles Sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "AtAAcJfVExJK1xgT",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Title Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Send Status message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Story Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Image": {
+      "main": [
+        [
+          {
+            "node": "Get the image from URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Voiceover": {
+      "main": [
+        [
+          {
+            "node": "Upload Voiceover",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Scenes": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Video url to array": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Generate Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Audio Duration": {
+      "main": [
+        [
+          {
+            "node": "Generate Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Set Video Clips",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a Error message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Voiceover": {
+      "main": [
+        [
+          {
+            "node": "Get Audio Duration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Video Scene": {
+      "main": [
+        [
+          {
+            "node": "Add TTS To Scene",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add TTS To Scene": {
+      "main": [
+        [
+          {
+            "node": "Add Captions To Scene",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Captions To Scene": {
+      "main": [
+        [
+          {
+            "node": "Video url to array",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Final Video": {
+      "main": [
+        [
+          {
+            "node": "Merge video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Title Generator",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "set voiceover Files": {
+      "main": [
+        [
+          {
+            "node": "Generate Voiceover",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Video Clips": {
+      "main": [
+        [
+          {
+            "node": "Create Final Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser1": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Title Generator",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Append or update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Title Generator": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Files Names and Path": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get the image from URL": {
+      "main": [
+        [
+          {
+            "node": "Create Video Scene",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop and Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SerpAPI": {
+      "ai_tool": [
+        [
+          {
+            "node": "Title Generator",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get a video1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Copy to MinIO": {
+      "main": [
+        [
+          {
+            "node": "Set Files Names and Path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Story Generator": {
+      "main": [
+        [
+          {
+            "node": "Split Scenes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a Error message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Story Generator",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge video": {
+      "main": [
+        [
+          {
+            "node": "Upload a video",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Copy to MinIO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload a video": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Update Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Story Generator",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Status message": {
+      "main": [
+        []
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Limit1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update a video": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Get a video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Update a video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet1": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit1": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser2": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SerpAPI1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Success message": {
+      "main": [
+        []
+      ]
+    },
+    "Get a video": {
+      "main": [
+        [
+          {
+            "node": "Send Success message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SerpAPI2": {
+      "ai_tool": [
+        [
+          {
+            "node": "Story Generator",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Code1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a video1": {
+      "main": [
+        [
+          {
+            "node": "Send Success message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a Error message1": {
+      "main": [
+        [
+          {
+            "node": "set voiceover Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Titles Sheet": {
+      "ai_tool": [
+        [
+          {
+            "node": "Title Generator",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "5bc833c7-e770-4201-b9f6-2f32aa3cbc0a",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b96284454b93355e1c623ab230a904fa7c612c0ab646744c4a80a50909f21f9f"
+  },
+  "id": "RGIUoAOKhLXZVTvz",
+  "tags": [
+    {
+      "createdAt": "2025-08-20T21:21:00.302Z",
+      "updatedAt": "2025-08-20T21:21:00.302Z",
+      "id": "vD7IP5PAFhd1xR9t",
+      "name": "YouTube Channel"
+    }
+  ]
+}
